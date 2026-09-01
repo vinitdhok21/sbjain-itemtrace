@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, PlusCircle, ArrowRight, MessageSquare, ShieldCheck, HelpCircle, Layers, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Search, PlusCircle, ArrowRight, MessageSquare, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
 export default function LandingPage() {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
-  const [toastMessage, setToastMessage] = useState(null);
   const [supabaseConnected, setSupabaseConnected] = useState(false);
 
   useEffect(() => {
@@ -51,11 +50,6 @@ export default function LandingPage() {
     testSupabase();
   }, []);
 
-  const triggerToast = (featureName) => {
-    setToastMessage(`"${featureName}" feature will be available in Stage 2!`);
-    setTimeout(() => setToastMessage(null), 3500);
-  };
-
   const steps = [
     {
       id: 1,
@@ -94,14 +88,6 @@ export default function LandingPage() {
   return (
     <div className="relative min-h-[calc(100vh-8rem)] flex flex-col justify-start">
       
-      {/* Toast Notification for coming soon features */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-slate-900 text-white text-sm font-semibold px-4 py-3 rounded-xl shadow-xl animate-[slideIn_0.3s_ease-out]">
-          <Sparkles className="w-4 h-4 text-yellow-400 animate-spin" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
-
       {/* Hero Section */}
       <section className="relative px-4 pt-16 pb-20 sm:px-6 lg:px-8 bg-gradient-to-b from-indigo-50/40 via-white to-transparent">
         <div className="max-w-4xl mx-auto text-center space-y-8">
@@ -142,22 +128,40 @@ export default function LandingPage() {
           {/* Action Callouts */}
           <div className="flex flex-col sm:flex-row justify-center items-center gap-4 pt-4">
             <button
-              onClick={() => triggerToast('Report Lost Item')}
-              className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3.5 text-base font-semibold text-white bg-rose-500 hover:bg-rose-600 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 active:scale-[0.98]"
+              onClick={() => {
+                if (currentUser) {
+                  navigate('/report/lost');
+                } else {
+                  navigate('/login', { state: { from: { pathname: '/report/lost' } } });
+                }
+              }}
+              className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3.5 text-base font-semibold text-white bg-rose-500 hover:bg-rose-600 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 active:scale-[0.98] cursor-pointer"
             >
               Report Lost Item
             </button>
             
             <button
-              onClick={() => triggerToast('Report Found Item')}
-              className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3.5 text-base font-semibold text-white bg-emerald-500 hover:bg-emerald-600 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 active:scale-[0.98]"
+              onClick={() => {
+                if (currentUser) {
+                  navigate('/report/found');
+                } else {
+                  navigate('/login', { state: { from: { pathname: '/report/found' } } });
+                }
+              }}
+              className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3.5 text-base font-semibold text-white bg-emerald-500 hover:bg-emerald-600 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 active:scale-[0.98] cursor-pointer"
             >
               Report Found Item
             </button>
 
             <button
-              onClick={() => triggerToast('Browse Items')}
-              className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3.5 text-base font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 rounded-xl shadow-sm transition-all duration-200 active:scale-[0.98]"
+              onClick={() => {
+                if (currentUser) {
+                  navigate('/items');
+                } else {
+                  navigate('/login', { state: { from: { pathname: '/items' } } });
+                }
+              }}
+              className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3.5 text-base font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 rounded-xl shadow-sm transition-all duration-200 active:scale-[0.98] cursor-pointer"
             >
               <Search className="w-4 h-4 mr-2" />
               Browse Items
