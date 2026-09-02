@@ -34,9 +34,8 @@ export default function ResetPasswordPage() {
       const errorCode = hashParams.get('error_code') || queryParams.get('error_code');
 
       if (errorDescription || errorCode) {
-        let msg = 'The password reset link is invalid or has expired. Please request a new one.';
+        let msg = 'The password reset session is invalid or has expired. Please request a new verification code.';
         if (errorDescription) {
-          // Format message cleanly (replace '+' with space if URL-encoded)
           msg = decodeURIComponent(errorDescription.replace(/\+/g, ' '));
         }
         setLinkError(msg);
@@ -49,12 +48,15 @@ export default function ResetPasswordPage() {
     const hasError = parseUrlErrors();
     if (hasError) return;
 
-    // 2. Check for active recovery session or listen for PASSWORD_RECOVERY event
+    // 2. Check for active recovery session or listen for auth events
     const verifyRecoverySession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
           setHasValidSession(true);
+        } else if (!hasError) {
+          // If no session exists and user didn't arrive with verification state
+          setHasValidSession(false);
         }
       } catch (err) {
         console.error('Error verifying session:', err.message);
@@ -120,8 +122,8 @@ export default function ResetPasswordPage() {
       console.error('Password update error:', err.message);
       if (err.message && err.message.toLowerCase().includes('same_password')) {
         setError('New password must be different from your old password.');
-      } else if (err.message && err.message.toLowerCase().includes('auth session missing')) {
-        setError('Your password reset session has expired or is invalid. Please request a new reset link.');
+      } else if (err.message && (err.message.toLowerCase().includes('auth session missing') || err.message.toLowerCase().includes('session'))) {
+        setError('Your verification session has expired. Please verify your OTP code again.');
       } else {
         setError(err.message || 'Failed to update password. Please try again.');
       }
@@ -159,15 +161,15 @@ export default function ResetPasswordPage() {
             </p>
           </div>
 
-          {/* Expired / Invalid Link State */}
-          {linkError ? (
+          {/* Expired / Invalid Link or Missing Session State */}
+          {linkError || (!checkingSession && !hasValidSession) ? (
             <div className="flex flex-col items-center justify-center py-6 text-center space-y-4 animate-[scaleIn_0.3s_ease-out]">
               <div className="p-3 bg-rose-50 text-rose-500 rounded-2xl border border-rose-100">
                 <AlertCircle className="w-12 h-12" />
               </div>
-              <h3 className="text-lg font-bold text-slate-800">Reset Link Expired or Invalid</h3>
+              <h3 className="text-lg font-bold text-slate-800">Verification Required</h3>
               <p className="text-xs text-slate-500 leading-relaxed px-2">
-                {linkError}
+                {linkError || 'No active verification session found. Please enter your email and verify your 6-digit OTP first.'}
               </p>
               <div className="pt-2 w-full space-y-2">
                 <Link
@@ -175,7 +177,7 @@ export default function ResetPasswordPage() {
                   className="w-full flex items-center justify-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-md text-sm font-semibold text-white bg-primary-500 hover:bg-primary-600 transition-all cursor-pointer"
                 >
                   <KeyRound className="w-4 h-4" />
-                  Request New Reset Link
+                  Send Verification OTP
                 </Link>
                 <Link
                   to="/login"
