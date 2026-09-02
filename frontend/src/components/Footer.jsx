@@ -51,13 +51,19 @@ export default function Footer() {
         </div>
 
         {/* Bottom Banner */}
-        <div className="mt-8 pt-6 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-slate-400">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-center sm:text-left">
-            <span>&copy; {currentYear} SBJain ItemTrace. All rights reserved.</span>
-            <span className="hidden sm:inline text-slate-300">•</span>
-            <span className="text-slate-500 font-medium">Developed for SB Jain College, Nagpur</span>
+        <div className="mt-8 pt-6 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center sm:items-start gap-4 text-xs text-slate-400">
+          <div className="flex flex-col space-y-1 text-center sm:text-left">
+            <div>
+              &copy; {currentYear} SBJain ItemTrace. All rights reserved.
+            </div>
+            <div className="text-slate-500 font-medium">
+              Developed by the Department of Computer Science and Engineering
+            </div>
+            <div className="text-slate-400 text-[11px]">
+              S. B. Jain Institute of Technology, Management & Research
+            </div>
           </div>
-          <div className="flex gap-4">
+          <div className="flex gap-4 pt-1 sm:pt-0">
             <span className="cursor-not-allowed hover:text-slate-600">Privacy Policy</span>
             <span className="cursor-not-allowed hover:text-slate-600">Terms of Use</span>
           </div>
