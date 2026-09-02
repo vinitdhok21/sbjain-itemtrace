@@ -14,7 +14,8 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setError('');
 
-    if (!email) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
       setError('Please enter your college email address.');
       return;
     }
@@ -22,16 +23,23 @@ export default function ForgotPasswordPage() {
     setLoading(true);
 
     try {
-      // Direct reset dispatch via Supabase auth, setting the redirect point back to Login
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/login`,
+      // Direct reset dispatch via Supabase auth, setting the redirect point to Reset Password page
+      const redirectUrl = `${window.location.origin}/reset-password`;
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+        redirectTo: redirectUrl,
       });
 
       if (resetError) throw resetError;
       setSuccess(true);
     } catch (err) {
       console.error('Password reset dispatch error:', err.message);
-      setError(err.message || 'Failed to dispatch password recovery email.');
+      if (err.message && err.message.toLowerCase().includes('rate limit')) {
+        setError('Too many requests. Please wait a few minutes before requesting another reset email.');
+      } else if (err.message && err.message.toLowerCase().includes('network')) {
+        setError('Network error. Please check your internet connection and try again.');
+      } else {
+        setError(err.message || 'Failed to dispatch password recovery email.');
+      }
     } finally {
       setLoading(false);
     }
