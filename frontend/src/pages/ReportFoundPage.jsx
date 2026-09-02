@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { itemService } from '../services/itemService';
@@ -7,10 +7,12 @@ import { storageService } from '../services/storageService';
 import { emailAlertService } from '../services/emailAlertService';
 import { supabase } from '../lib/supabase';
 import { CATEGORIES, LOCATIONS, ITEM_TYPE } from '../constants/itemConstants';
-import { validateItemForm, validateImageFile } from '../utils/validation';
+import { validateItemForm, validateImageFiles, MAX_IMAGES_PER_ITEM } from '../utils/validation';
+import { optimizeMultipleImages } from '../utils/imageOptimizer';
+import { formatItemImageUrls } from '../utils/imageUtils';
 import { getFriendlyErrorMessage } from '../utils/errorUtils';
 import MatchCard from '../components/MatchCard';
-import { AlertCircle, Camera, Trash2, ArrowLeft, RefreshCw, CheckCircle2, Info, Sparkles, Box } from 'lucide-react';
+import { AlertCircle, Camera, Trash2, ArrowLeft, RefreshCw, CheckCircle2, Info, Sparkles, Box, Plus } from 'lucide-react';
 
 export default function ReportFoundPage() {
   const { currentUser } = useAuth();
@@ -25,9 +27,9 @@ export default function ReportFoundPage() {
   const [approximateTime, setApproximateTime] = useState('');
   const [identifyingDetails, setIdentifyingDetails] = useState('');
   
-  // Image Upload States
-  const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
+  // Multi-Image Upload States (Max 2 images, 2MB each)
+  const [imageFiles, setImageFiles] = useState([]);
+  const [imagePreviews, setImagePreviews] = useState([]);
   
   // UX Operation States
   const [submitting, setSubmitting] = useState(false);
@@ -40,31 +42,38 @@ export default function ReportFoundPage() {
   const [matches, setMatches] = useState([]);
   const [loadingMatches, setLoadingMatches] = useState(false);
 
-  // File size limit: 5MB
-  const MAX_FILE_SIZE = 5 * 1024 * 1024;
-  const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+  // Clean up object URLs on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      imagePreviews.forEach((preview) => {
+        if (preview) URL.revokeObjectURL(preview);
+      });
+    };
+  }, [imagePreviews]);
 
   const handleImageChange = (e) => {
     setError('');
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
-    const { isValid, error: imgError } = validateImageFile(file);
+    const { isValid, error: imgError, validFiles } = validateImageFiles(files, imageFiles.length, MAX_IMAGES_PER_ITEM);
     if (!isValid) {
       setError(imgError);
       return;
     }
 
-    setImageFile(file);
-    setImagePreview(URL.createObjectURL(file));
+    const newPreviews = validFiles.map((f) => URL.createObjectURL(f));
+    setImageFiles((prev) => [...prev, ...validFiles]);
+    setImagePreviews((prev) => [...prev, ...newPreviews]);
+    e.target.value = ''; // Reset input
   };
 
-  const handleRemoveImage = () => {
-    setImageFile(null);
-    if (imagePreview) {
-      URL.revokeObjectURL(imagePreview);
-      setImagePreview(null);
+  const handleRemoveImage = (index) => {
+    if (imagePreviews[index]) {
+      URL.revokeObjectURL(imagePreviews[index]);
     }
+    setImageFiles((prev) => prev.filter((_, i) => i !== index));
+    setImagePreviews((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async (e) => {
@@ -89,25 +98,35 @@ export default function ReportFoundPage() {
     }
 
     setSubmitting(true);
-    let uploadedImageUrl = null;
+    let uploadedUrls = [];
 
     try {
-      // 1. Upload optional image if provided
-      if (imageFile && currentUser) {
-        setUploadProgress(40);
-        const { publicUrl, error: uploadError } = await storageService.uploadImage(imageFile, currentUser.id);
-        
+      // 1. Client-side Image Optimization & Upload (Max 2 images)
+      if (imageFiles.length > 0 && currentUser) {
+        setUploadProgress(30);
+
+        // Compress and resize images client-side before upload to save storage
+        const optimizedFiles = await optimizeMultipleImages(imageFiles);
+        setUploadProgress(50);
+
+        const { publicUrls, error: uploadError } = await storageService.uploadMultipleImages(
+          optimizedFiles,
+          currentUser.id
+        );
+
         if (uploadError) {
           throw new Error(`Image upload failed: ${uploadError.message}.`);
         }
 
-        uploadedImageUrl = publicUrl;
+        uploadedUrls = publicUrls || [];
         setUploadProgress(80);
       }
 
       setUploadProgress(90);
 
-      // 2. Prepare payload and insert into database using itemService
+      // 2. Prepare payload and insert into database
+      const formattedImageUrl = formatItemImageUrls(uploadedUrls);
+
       const payload = {
         type: ITEM_TYPE.FOUND,
         title: title.trim(),
@@ -117,18 +136,26 @@ export default function ReportFoundPage() {
         date_occurred: dateOccurred,
         approximate_time: approximateTime ? approximateTime.trim() : null,
         identifying_details: identifyingDetails ? identifyingDetails.trim() : null,
-        image_url: uploadedImageUrl
+        image_url: formattedImageUrl
       };
 
       const { data, error: insertError } = await itemService.createItem(payload);
-      if (insertError) throw insertError;
+      if (insertError) {
+        // Rollback uploaded images from Supabase Storage if item insertion fails
+        if (uploadedUrls.length > 0) {
+          storageService.deleteMultipleImages(uploadedUrls).catch((cleanupErr) => {
+            console.error('Orphan image cleanup error after insertion failure:', cleanupErr.message);
+          });
+        }
+        throw insertError;
+      }
 
       setCreatedItem(data);
       setUploadProgress(100);
       setSuccess(true);
       setSubmitting(false);
 
-      // 3. Immediately query matching candidates in background
+      // 3. Query matching candidates in background
       setLoadingMatches(true);
       try {
         const { data: matchData } = await matchingService.findMatchesForItem(data);
@@ -139,7 +166,7 @@ export default function ReportFoundPage() {
           console.error('Non-blocking match notification dispatch error:', notifyErr);
         });
 
-        // 5. Asynchronously dispatch admin alert to dhokvinit@gmail.com
+        // 5. Asynchronously dispatch admin alert
         emailAlertService.sendReportAdminEmailAlert({
           item: data,
           reporterName: currentUser?.user_metadata?.full_name || currentUser?.email,
@@ -412,64 +439,69 @@ export default function ReportFoundPage() {
               </p>
             </div>
 
-            {/* Optional Image Picker Section */}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-600">
-                Item Photo (Optional)
-              </label>
+            {/* Optional Multi-Image Picker Section (Max 2 images, 2MB each) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-600">
+                  Item Photos (Optional, Max 2)
+                </label>
+                {imagePreviews.length > 0 && (
+                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
+                    {imagePreviews.length} of {MAX_IMAGES_PER_ITEM} images selected
+                  </span>
+                )}
+              </div>
 
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center gap-4">
                 
-                {/* Preview frame */}
-                <div className="w-24 h-24 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden flex items-center justify-center shrink-0">
-                  {imagePreview ? (
-                    <img src={imagePreview} alt="Found item preview" className="w-full h-full object-cover" />
-                  ) : (
-                    <Camera className="w-8 h-8 text-slate-300" />
-                  )}
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
+                {/* Render Selected Image Previews */}
+                {imagePreviews.map((previewUrl, idx) => (
+                  <div key={idx} className="relative w-24 h-24 bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden shadow-xs group">
+                    <img
+                      src={previewUrl}
+                      alt={`Selected found item preview ${idx + 1}`}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
                     
-                    {/* Choose file trigger */}
-                    <label className="inline-flex items-center gap-1.5 px-3 py-2 border border-slate-200 hover:bg-slate-50 rounded-xl shadow-xs text-xs font-semibold text-slate-700 cursor-pointer select-none">
-                      <Camera className="w-3.5 h-3.5 text-slate-500" />
-                      Upload Photo
-                      <input 
-                        type="file" 
-                        accept="image/jpeg,image/jpg,image/png,image/webp" 
-                        onChange={handleImageChange} 
-                        disabled={submitting} 
-                        className="hidden" 
-                      />
-                    </label>
+                    {/* Remove button */}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveImage(idx)}
+                      disabled={submitting}
+                      title="Remove image"
+                      className="absolute top-1 right-1 p-1 bg-rose-500 hover:bg-rose-600 text-white rounded-lg shadow-sm transition-all cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
 
-                    {/* Remove image trigger */}
-                    {imagePreview && (
-                      <button
-                        type="button"
-                        onClick={handleRemoveImage}
-                        disabled={submitting}
-                        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-100 rounded-xl cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Remove
-                      </button>
-                    )}
-
+                    <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/60 text-white text-[9px] font-bold rounded-md">
+                      #{idx + 1}
+                    </div>
                   </div>
-                  {imageFile && (
-                    <p className="text-[10px] text-slate-505 font-semibold truncate max-w-[180px]" title={imageFile.name}>
-                      Selected: {imageFile.name}
-                    </p>
-                  )}
-                  <p className="text-[10px] text-slate-400">
-                    JPG, JPEG, PNG, or WEBP. Max size 5MB.
-                  </p>
-                </div>
+                ))}
+
+                {/* Upload Trigger (if under limit) */}
+                {imagePreviews.length < MAX_IMAGES_PER_ITEM && (
+                  <label className="w-24 h-24 border-2 border-dashed border-slate-200 hover:border-emerald-400 hover:bg-emerald-50/40 rounded-2xl flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-emerald-600 transition-all cursor-pointer select-none">
+                    <Plus className="w-5 h-5" />
+                    <span className="text-[10px] font-bold">Add Photo</span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/jpg,image/png,image/webp"
+                      multiple={imagePreviews.length === 0}
+                      onChange={handleImageChange}
+                      disabled={submitting}
+                      className="hidden"
+                    />
+                  </label>
+                )}
 
               </div>
+
+              <p className="text-[10px] text-slate-400">
+                Allowed: JPG, PNG, WEBP. Max 2 MB per image. Images are optimized client-side before upload.
+              </p>
             </div>
 
             {/* Submit operations */}

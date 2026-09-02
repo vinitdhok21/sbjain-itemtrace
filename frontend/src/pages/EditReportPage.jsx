@@ -4,10 +4,12 @@ import { useAuth } from '../context/AuthContext';
 import { itemService } from '../services/itemService';
 import { storageService } from '../services/storageService';
 import { CATEGORIES, LOCATIONS } from '../constants/itemConstants';
-import { validateItemForm, validateImageFile } from '../utils/validation';
+import { validateItemForm, validateImageFiles, MAX_IMAGES_PER_ITEM } from '../utils/validation';
+import { optimizeMultipleImages } from '../utils/imageOptimizer';
+import { getItemImageUrls, formatItemImageUrls } from '../utils/imageUtils';
 import { getFriendlyErrorMessage } from '../utils/errorUtils';
 import ConfirmationModal from '../components/ConfirmationModal';
-import { ArrowLeft, Save, AlertCircle, RefreshCw, CheckCircle2, Camera, Trash2 } from 'lucide-react';
+import { ArrowLeft, Save, AlertCircle, RefreshCw, CheckCircle2, Camera, Trash2, Plus } from 'lucide-react';
 
 export default function EditReportPage() {
   const { id } = useParams();
@@ -29,18 +31,22 @@ export default function EditReportPage() {
   const [dateOccurred, setDateOccurred] = useState('');
   const [identifyingDetails, setIdentifyingDetails] = useState('');
 
-  // Image Upload and Management states
-  const [currentImageUrl, setCurrentImageUrl] = useState('');
-  const [oldImageUrl, setOldImageUrl] = useState('');
-  const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
-  const [imageRemoved, setImageRemoved] = useState(false);
+  // Multi-Image States
+  const [existingImages, setExistingImages] = useState([]);
+  const [initialOldImages, setInitialOldImages] = useState([]);
+  const [newImageFiles, setNewImageFiles] = useState([]);
+  const [newImagePreviews, setNewImagePreviews] = useState([]);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [confirmDeleteTarget, setConfirmDeleteTarget] = useState(null);
 
-  // File validation limits
-  const MAX_FILE_SIZE = 5 * 1024 * 1024;
-  const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+  // Clean up object URLs on unmount
+  useEffect(() => {
+    return () => {
+      newImagePreviews.forEach((preview) => {
+        if (preview) URL.revokeObjectURL(preview);
+      });
+    };
+  }, [newImagePreviews]);
 
   useEffect(() => {
     const fetchItemDetails = async () => {
@@ -74,11 +80,12 @@ export default function EditReportPage() {
         setDescription(data.description || '');
         setCategory(data.category || '');
         setLocation(data.location || '');
-        setCurrentImageUrl(data.image_url || '');
-        setOldImageUrl(data.image_url || '');
+        
+        const urls = getItemImageUrls(data.image_url);
+        setExistingImages(urls);
+        setInitialOldImages(urls);
         
         if (data.date_occurred) {
-          // Format Date to YYYY-MM-DD for date picker input value
           const formattedDate = new Date(data.date_occurred).toISOString().split('T')[0];
           setDateOccurred(formattedDate);
         }
@@ -97,35 +104,41 @@ export default function EditReportPage() {
     }
   }, [id, currentUser]);
 
+  const totalCurrentImages = existingImages.length + newImageFiles.length;
+
   const handleImageChange = (e) => {
     setError('');
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
-    const { isValid, error: imgError } = validateImageFile(file);
+    const { isValid, error: imgError, validFiles } = validateImageFiles(
+      files,
+      totalCurrentImages,
+      MAX_IMAGES_PER_ITEM
+    );
+
     if (!isValid) {
       setError(imgError);
       return;
     }
 
-    setImageFile(file);
-    setImagePreview(URL.createObjectURL(file));
-    setImageRemoved(false);
+    const newPreviews = validFiles.map((f) => URL.createObjectURL(f));
+    setNewImageFiles((prev) => [...prev, ...validFiles]);
+    setNewImagePreviews((prev) => [...prev, ...newPreviews]);
+    e.target.value = '';
   };
 
-  const handleRemoveImageClick = () => {
-    setIsConfirmOpen(true);
+  const handleRemoveExistingImage = (index) => {
+    setExistingImages((prev) => prev.filter((_, i) => i !== index));
+    setConfirmDeleteTarget(null);
   };
 
-  const handleConfirmRemoveImage = () => {
-    setImageRemoved(true);
-    setImageFile(null);
-    if (imagePreview) {
-      URL.revokeObjectURL(imagePreview);
-      setImagePreview(null);
+  const handleRemoveNewImage = (index) => {
+    if (newImagePreviews[index]) {
+      URL.revokeObjectURL(newImagePreviews[index]);
     }
-    setCurrentImageUrl('');
-    setIsConfirmOpen(false);
+    setNewImageFiles((prev) => prev.filter((_, i) => i !== index));
+    setNewImagePreviews((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async (e) => {
@@ -151,48 +164,51 @@ export default function EditReportPage() {
 
     try {
       setSaving(true);
-      let uploadedImageUrl = null;
-      let isNewUpload = false;
+      let newlyUploadedUrls = [];
 
-      // 1. Handle File Upload if new file selected
-      if (imageFile && currentUser) {
-        setUploadProgress(40);
-        const { publicUrl, error: uploadError } = await storageService.uploadImage(imageFile, currentUser.id);
+      // 1. Upload new image files if selected
+      if (newImageFiles.length > 0 && currentUser) {
+        setUploadProgress(30);
+
+        // Compress images client-side
+        const optimizedFiles = await optimizeMultipleImages(newImageFiles);
+        setUploadProgress(50);
+
+        const { publicUrls, error: uploadError } = await storageService.uploadMultipleImages(
+          optimizedFiles,
+          currentUser.id
+        );
         
         if (uploadError) {
-          throw new Error(`Image upload failed: ${uploadError.message}. Make sure your storage configuration is correct.`);
+          throw new Error(`Image upload failed: ${uploadError.message}.`);
         }
 
-        uploadedImageUrl = publicUrl;
-        isNewUpload = true;
+        newlyUploadedUrls = publicUrls || [];
         setUploadProgress(80);
       }
 
       // 2. Prepare payload
+      const allFinalUrls = [...existingImages, ...newlyUploadedUrls];
+      const formattedImageUrl = formatItemImageUrls(allFinalUrls);
+
       const updateData = {
         title: title.trim(),
         category,
         description: description.trim(),
         location,
         date_occurred: dateOccurred,
-        identifying_details: identifyingDetails.trim() || null
+        identifying_details: identifyingDetails.trim() || null,
+        image_url: formattedImageUrl
       };
-
-      // Determine image_url updates
-      if (imageRemoved) {
-        updateData.image_url = null;
-      } else if (isNewUpload) {
-        updateData.image_url = uploadedImageUrl;
-      }
 
       // 3. Save to database
       const { error: updateError } = await itemService.updateItem(id, updateData);
       
       if (updateError) {
-        // DB update failed: rollback newly uploaded image if applicable
-        if (isNewUpload && uploadedImageUrl) {
-          storageService.deleteImage(uploadedImageUrl).catch((rollbackErr) => {
-            console.error('Failed to rollback orphaned new image upload:', rollbackErr.message);
+        // Rollback newly uploaded images if database update fails
+        if (newlyUploadedUrls.length > 0) {
+          storageService.deleteMultipleImages(newlyUploadedUrls).catch((rollbackErr) => {
+            console.error('Failed to rollback orphaned new image uploads:', rollbackErr.message);
           });
         }
         throw updateError;
@@ -200,10 +216,11 @@ export default function EditReportPage() {
 
       setUploadProgress(100);
 
-      // 4. Safely clean up old storage image file if it was replaced or removed
-      if ((imageRemoved || isNewUpload) && oldImageUrl) {
-        storageService.deleteImage(oldImageUrl).catch((cleanupErr) => {
-          console.error('Non-blocking storage cleanup failure on old image replacement:', cleanupErr.message);
+      // 4. Safely clean up removed old images from Supabase Storage
+      const removedOldUrls = initialOldImages.filter((oldUrl) => !existingImages.includes(oldUrl));
+      if (removedOldUrls.length > 0) {
+        storageService.deleteMultipleImages(removedOldUrls).catch((cleanupErr) => {
+          console.error('Non-blocking storage cleanup failure on removed images:', cleanupErr.message);
         });
       }
 
@@ -396,68 +413,90 @@ export default function EditReportPage() {
           />
         </div>
 
-        {/* Optional Image Picker Section */}
-        <div className="space-y-2 pt-3 border-t border-slate-50">
-          <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider">
-            Item Photo
-          </label>
+        {/* Multi-Image Management Section (Max 2 images, 2MB each) */}
+        <div className="space-y-3 pt-3 border-t border-slate-50">
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider">
+              Item Photos (Max 2)
+            </label>
+            {totalCurrentImages > 0 && (
+              <span className="text-[10px] font-bold text-primary-600 bg-primary-50 border border-primary-100 px-2 py-0.5 rounded-full">
+                {totalCurrentImages} of {MAX_IMAGES_PER_ITEM} images attached
+              </span>
+            )}
+          </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             
-            {/* Preview frame */}
-            <div className="w-24 h-24 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden flex items-center justify-center shrink-0">
-              {imagePreview ? (
-                <img src={imagePreview} alt="Item preview" className="w-full h-full object-cover" />
-              ) : currentImageUrl ? (
-                <img src={currentImageUrl} alt="Current item" className="w-full h-full object-cover" />
-              ) : (
-                <Camera className="w-8 h-8 text-slate-300" />
-              )}
-            </div>
-
-            <div className="space-y-1.5 flex-grow">
-              <div className="flex flex-wrap items-center gap-2">
-                
-                {/* Choose file trigger */}
-                <label className="inline-flex items-center gap-1.5 px-3 py-2 border border-slate-200 hover:bg-slate-50 rounded-xl shadow-xs text-[10px] font-bold text-slate-700 cursor-pointer select-none">
-                  <Camera className="w-3.5 h-3.5 text-slate-500" />
-                  {currentImageUrl || imagePreview ? 'Replace Photo' : 'Upload Photo'}
-                  <input 
-                    type="file" 
-                    accept="image/jpeg,image/jpg,image/png,image/webp" 
-                    onChange={handleImageChange} 
-                    disabled={saving} 
-                    className="hidden" 
-                  />
-                </label>
-
-                {/* Remove image trigger */}
-                {(currentImageUrl || imagePreview) && (
-                  <button
-                    type="button"
-                    onClick={handleRemoveImageClick}
-                    disabled={saving}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 text-[10px] font-bold text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-100 rounded-xl cursor-pointer transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Remove
-                  </button>
-                )}
-
+            {/* Existing Saved Images */}
+            {existingImages.map((imageUrl, idx) => (
+              <div key={`existing-${idx}`} className="relative w-24 h-24 bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden shadow-xs group">
+                <img
+                  src={imageUrl}
+                  alt={`Saved item image ${idx + 1}`}
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleRemoveExistingImage(idx)}
+                  disabled={saving}
+                  title="Remove saved image"
+                  className="absolute top-1 right-1 p-1 bg-rose-500 hover:bg-rose-600 text-white rounded-lg shadow-sm transition-all cursor-pointer"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+                <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/60 text-white text-[9px] font-bold rounded-md">
+                  Saved #{idx + 1}
+                </div>
               </div>
-              
-              {imageFile && (
-                <p className="text-[10px] text-slate-505 font-semibold truncate max-w-[200px]" title={imageFile.name}>
-                  Selected: {imageFile.name}
-                </p>
-              )}
+            ))}
 
-              <p className="text-[10px] text-slate-400">
-                JPG, JPEG, PNG, or WEBP. Max size 5MB.
-              </p>
-            </div>
+            {/* Newly Selected Image Previews */}
+            {newImagePreviews.map((previewUrl, idx) => (
+              <div key={`new-${idx}`} className="relative w-24 h-24 bg-slate-50 border border-emerald-300 rounded-2xl overflow-hidden shadow-xs group">
+                <img
+                  src={previewUrl}
+                  alt={`New item image ${idx + 1}`}
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleRemoveNewImage(idx)}
+                  disabled={saving}
+                  title="Remove new image"
+                  className="absolute top-1 right-1 p-1 bg-rose-500 hover:bg-rose-600 text-white rounded-lg shadow-sm transition-all cursor-pointer"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+                <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-emerald-600 text-white text-[9px] font-bold rounded-md">
+                  New #{idx + 1}
+                </div>
+              </div>
+            ))}
+
+            {/* Add Photo Trigger (if under 2 images) */}
+            {totalCurrentImages < MAX_IMAGES_PER_ITEM && (
+              <label className="w-24 h-24 border-2 border-dashed border-slate-200 hover:border-primary-400 hover:bg-primary-50/40 rounded-2xl flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-primary-600 transition-all cursor-pointer select-none">
+                <Plus className="w-5 h-5" />
+                <span className="text-[10px] font-bold">Add Photo</span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/webp"
+                  multiple={totalCurrentImages === 0}
+                  onChange={handleImageChange}
+                  disabled={saving}
+                  className="hidden"
+                />
+              </label>
+            )}
 
           </div>
+
+          <p className="text-[10px] text-slate-400">
+            JPG, JPEG, PNG, or WEBP. Max size 2 MB per image. Optimized automatically.
+          </p>
         </div>
 
         {/* Upload progress state indicator */}

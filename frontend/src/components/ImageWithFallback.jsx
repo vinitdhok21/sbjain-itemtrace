@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Package, ImageOff } from 'lucide-react';
+import { getPrimaryImageUrl } from '../utils/imageUtils';
 
 export default function ImageWithFallback({
   src,
@@ -12,7 +13,8 @@ export default function ImageWithFallback({
   const [error, setError] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
-  const hasValidSrc = src && typeof src === 'string' && src.trim() !== '';
+  const resolvedSrc = getPrimaryImageUrl(src);
+  const hasValidSrc = Boolean(resolvedSrc);
 
   if (!hasValidSrc || error) {
     return (
@@ -39,7 +41,7 @@ export default function ImageWithFallback({
         </div>
       )}
       <img
-        src={src}
+        src={resolvedSrc}
         alt={alt}
         loading={loading}
         onLoad={() => setLoaded(true)}

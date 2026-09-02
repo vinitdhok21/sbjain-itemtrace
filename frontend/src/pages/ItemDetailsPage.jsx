@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { itemService } from '../services/itemService';
 import { matchingService } from '../services/matchingService';
 import { ITEM_STATUS, ITEM_TYPE } from '../constants/itemConstants';
+import { getItemImageUrls } from '../utils/imageUtils';
 import MatchCard from '../components/MatchCard';
 import ConfirmationModal from '../components/ConfirmationModal';
 import PageLoader from '../components/PageLoader';
@@ -34,6 +35,7 @@ export default function ItemDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState(null);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
   // States for matching items
   const [matches, setMatches] = useState([]);
@@ -269,15 +271,55 @@ export default function ItemDetailsPage() {
 
       {/* Main Grid Layout */}
       <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm grid grid-cols-1 md:grid-cols-2">
-        {/* Left Side: Image / Graphic placeholder */}
-        <div className="bg-slate-50 flex items-center justify-center p-6 border-b md:border-b-0 md:border-r border-slate-100 min-h-[300px] max-h-[450px]">
-          <ImageWithFallback
-            src={item.image_url}
-            alt={item.title}
-            className="w-full h-full max-h-[400px] object-contain rounded-2xl shadow-xs"
-            fallbackText="No image attached to this report"
-          />
-        </div>
+        {/* Left Side: Image / Multi-Image Gallery */}
+        {(() => {
+          const imageUrls = getItemImageUrls(item);
+          const currentDisplayUrl = imageUrls[selectedImageIndex] || imageUrls[0] || null;
+
+          return (
+            <div className="bg-slate-50 flex flex-col items-center justify-center p-6 border-b md:border-b-0 md:border-r border-slate-100 min-h-[300px]">
+              <div className="relative w-full flex items-center justify-center min-h-[260px] max-h-[380px]">
+                <ImageWithFallback
+                  src={currentDisplayUrl}
+                  alt={item.title}
+                  className="w-full h-full max-h-[380px] object-contain rounded-2xl shadow-xs"
+                  fallbackText="No image attached to this report"
+                />
+
+                {imageUrls.length > 1 && (
+                  <span className="absolute bottom-3 right-3 px-2 py-0.5 bg-black/60 backdrop-blur-xs text-white text-[10px] font-bold rounded-lg shadow-xs select-none">
+                    {selectedImageIndex + 1} / {imageUrls.length}
+                  </span>
+                )}
+              </div>
+
+              {/* Multi-Image Thumbnail Switcher */}
+              {imageUrls.length > 1 && (
+                <div className="flex items-center gap-2.5 mt-4 pt-3 border-t border-slate-200/60 w-full justify-center">
+                  {imageUrls.map((url, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setSelectedImageIndex(idx)}
+                      className={`relative w-14 h-14 rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${
+                        selectedImageIndex === idx
+                          ? 'border-primary-500 shadow-sm scale-105 ring-2 ring-primary-200'
+                          : 'border-slate-200 opacity-70 hover:opacity-100'
+                      }`}
+                    >
+                      <img
+                        src={url}
+                        alt={`Thumbnail ${idx + 1}`}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Right Side: Details Feed */}
         <div className="p-6 sm:p-8 flex flex-col justify-between space-y-6">

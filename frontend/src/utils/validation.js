@@ -2,34 +2,13 @@
  * Reusable Frontend Validation Utilities for SBJain ItemTrace
  */
 
-export const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-export const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
-
-/**
- * Validate image file before uploading to Supabase Storage
- */
-export function validateImageFile(file) {
-  if (!file) {
-    return { isValid: true, error: null };
-  }
-
-  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-    return {
-      isValid: false,
-      error: 'Invalid image format. Allowed formats: JPG, PNG, WEBP.'
-    };
-  }
-
-  if (file.size > MAX_IMAGE_SIZE_BYTES) {
-    const sizeInMb = (file.size / (1024 * 1024)).toFixed(1);
-    return {
-      isValid: false,
-      error: `File is too large (${sizeInMb} MB). Maximum allowed size is 5 MB.`
-    };
-  }
-
-  return { isValid: true, error: null };
-}
+export {
+  ALLOWED_IMAGE_TYPES,
+  MAX_IMAGE_SIZE_BYTES,
+  MAX_IMAGES_PER_ITEM,
+  validateImageFile,
+  validateImageFiles
+} from './imageOptimizer';
 
 /**
  * Validate item report forms (Lost, Found, Edit)

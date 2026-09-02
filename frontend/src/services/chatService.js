@@ -820,14 +820,11 @@ export const chatService = {
   // =====================================================
   // GET MESSAGES
   // =====================================================
-  async getMessages(conversationId) {
+  async getMessages(conversationId, limit = 100) {
 
     try {
 
-      const {
-        data,
-        error
-      } = await supabase
+      let query = supabase
         .from('messages')
         .select('*')
         .eq(
@@ -840,6 +837,15 @@ export const chatService = {
             ascending: true
           }
         );
+
+      if (limit && typeof limit === 'number') {
+        query = query.limit(limit);
+      }
+
+      const {
+        data,
+        error
+      } = await query;
 
 
       if (error) {

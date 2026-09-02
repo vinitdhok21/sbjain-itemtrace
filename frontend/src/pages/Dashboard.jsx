@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { itemService } from '../services/itemService';
 import { supabase } from '../lib/supabase';
 import { ITEM_TYPE, ITEM_STATUS } from '../constants/itemConstants';
+import { getPrimaryImageUrl } from '../utils/imageUtils';
 
 import {
   PlusCircle,
@@ -269,8 +270,8 @@ export default function Dashboard() {
 
           {/* IMAGE THUMBNAIL */}
           <div className="h-28 bg-slate-50 border border-slate-100/50 rounded-xl overflow-hidden flex items-center justify-center relative shrink-0">
-            {item.image_url ? (
-              <img src={item.image_url} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+            {getPrimaryImageUrl(item) ? (
+              <img src={getPrimaryImageUrl(item)} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
             ) : (
               <Box className="w-8 h-8 text-slate-300" />
             )}

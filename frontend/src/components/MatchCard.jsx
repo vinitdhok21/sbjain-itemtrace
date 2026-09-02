@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { MapPin, Calendar, Check, Box } from 'lucide-react';
 import { chatService } from '../services/chatService';
+import { getPrimaryImageUrl } from '../utils/imageUtils';
 
 export default function MatchCard({ match, originalItem }) {
   const navigate = useNavigate();
@@ -43,6 +44,7 @@ export default function MatchCard({ match, originalItem }) {
   const isItemActive = (item) => item?.status === 'active';
   const isSelf = Boolean(originalItem && originalItem.reported_by === matchedItem.reported_by);
   const isInactive = !isItemActive(matchedItem) || (originalItem && !isItemActive(originalItem));
+  const primaryThumbUrl = getPrimaryImageUrl(matchedItem);
 
   const handleContactClick = async (e) => {
     e.preventDefault(); // Stop Link propagation
@@ -89,8 +91,8 @@ export default function MatchCard({ match, originalItem }) {
         
         {/* Left: Thumbnail preview */}
         <div className="w-14 h-14 bg-slate-50 border border-slate-100 rounded-xl overflow-hidden flex items-center justify-center shrink-0">
-          {matchedItem.image_url ? (
-            <img src={matchedItem.image_url} alt={matchedItem.title} className="w-full h-full object-cover" />
+          {primaryThumbUrl ? (
+            <img src={primaryThumbUrl} alt={matchedItem.title} className="w-full h-full object-cover" loading="lazy" />
           ) : (
             <Box className="w-6 h-6 text-slate-300" />
           )}
