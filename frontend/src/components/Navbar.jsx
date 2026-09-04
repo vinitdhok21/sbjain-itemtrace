@@ -166,22 +166,13 @@ export default function Navbar() {
                 </button>
               </div>
             ) : (
-              <>
-                <Link
-                  to="/login"
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-700 hover:text-primary-600 rounded-xl hover:bg-slate-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-500"
-                >
-                  <LogIn className="w-4 h-4" aria-hidden="true" />
-                  Login
-                </Link>
-
-                <Link
-                  to="/register"
-                  className="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold text-white bg-primary-500 hover:bg-primary-600 rounded-xl transition-colors shadow-3xs focus-visible:ring-2 focus-visible:ring-primary-500"
-                >
-                  Register
-                </Link>
-              </>
+              <Link
+                to="/login"
+                className="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold text-white bg-primary-500 hover:bg-primary-600 rounded-xl transition-colors shadow-3xs focus-visible:ring-2 focus-visible:ring-primary-500"
+              >
+                <LogIn className="w-4 h-4 mr-1.5" aria-hidden="true" />
+                Sign In
+              </Link>
             )}
           </div>
 
@@ -245,24 +236,14 @@ export default function Navbar() {
                 Sign Out
               </button>
             ) : (
-              <>
                 <Link
                   to="/login"
                   onClick={() => setIsOpen(false)}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-primary-500 hover:bg-primary-600 rounded-xl transition-colors shadow-3xs"
                 >
                   <LogIn className="w-4 h-4" aria-hidden="true" />
-                  Login
+                  Sign In
                 </Link>
-
-                <Link
-                  to="/register"
-                  onClick={() => setIsOpen(false)}
-                  className="w-full flex items-center justify-center px-4 py-2.5 text-sm font-semibold text-white bg-primary-500 hover:bg-primary-600 rounded-xl transition-colors shadow-3xs"
-                >
-                  Register
-                </Link>
-              </>
             )}
           </div>
         </div>

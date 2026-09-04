@@ -27,14 +27,14 @@ export default function Footer() {
               <Link to="/" className="text-slate-600 hover:text-primary-600 transition-colors duration-200">
                 Home
               </Link>
+              <Link to="/items" className="text-slate-600 hover:text-primary-600 transition-colors duration-200">
+                Browse Items
+              </Link>
+              <Link to="/dashboard" className="text-slate-600 hover:text-primary-600 transition-colors duration-200">
+                Dashboard
+              </Link>
               <Link to="/login" className="text-slate-600 hover:text-primary-600 transition-colors duration-200">
-                Login
-              </Link>
-              <Link to="/register" className="text-slate-600 hover:text-primary-600 transition-colors duration-200">
-                Register
-              </Link>
-              <Link to="/forgot-password" className="text-slate-600 hover:text-primary-600 transition-colors duration-200">
-                Reset Password
+                Sign In
               </Link>
             </div>
           </div>
